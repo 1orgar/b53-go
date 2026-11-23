@@ -10,17 +10,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/1orgar/b53-go/actions/workflows/ci.yml/badge.svg)](https://github.com/1orgar/b53-go/actions/workflows/ci.yml)
 
-**`b53-go`** is a zero-dependency Go library and CLI for reversible cryptographic packing of boolean slices of arbitrary length into IEEE 754 `binary64` (`float64`) values in the half-open interval $[0.0, 1.0)$.
+**`b53-go`** is a zero-dependency Go library and CLI for reversible cryptographic packing of boolean slices of arbitrary length into IEEE 754 `binary64` (`float64`) values in the half-open interval `[0.0, 1.0)`.
 
-It is wire-compatible and cryptographically interoperable with the Python [`b53`](https://github.com/1orgar/b53) library across single-float encryption, chained arbitrary-length serialization, and `scrypt` password key stretching.
+It is wire-compatible and cryptographically interoperable with the Python [`b53`](https://github.com/1orgar/b53) library across single-float encryption, chained arbitrary-length serialization, `scrypt` password key stretching, and asymmetric `X25519 + HKDF-SHA256` (`b53a`).
 
 ## Key Properties
 
-- **Hidden length inside the float:** for `1..50` booleans, the original length $L \in [1, 50]$ is encoded directly inside the 53-bit mantissa space—no external length metadata is required.
-- **Randomized output (nonce) per encryption:** encrypting the same boolean slice with the same salt produces different pseudorandom `float64` values in $[0.0, 1.0)$.
-- **Bijective 53-bit permutation:** uses an 8-round unbalanced Feistel network ($26 + 27 = 53$ bits) keyed by `HMAC-SHA256` with your secret salt.
+- **Hidden length inside the float:** for `1..50` booleans, the original length `L ∈ [1, 50]` is encoded directly inside the 53-bit mantissa space—no external length metadata is required.
+- **Randomized output (nonce) per encryption:** encrypting the same boolean slice with the same salt produces different pseudorandom `float64` values in `[0.0, 1.0)`.
+- **Bijective 53-bit permutation:** uses an 8-round unbalanced Feistel network (`26 + 27 = 53` bits) keyed by `HMAC-SHA256` with your secret salt.
 - **Chained arbitrary-length serialization:** `Serialize` / `Deserialize` split slices of any length into `(len / minSize) + 1` randomized chunks with chained per-chunk salts bound to chunk count, index, and previous chunk size.
 - **Built-in `scrypt` KDF (RFC 7914):** `DeriveSalt` and `NewCipherFromPassword` stretch human passwords into 256-bit keys with optional domain-separation context.
+- **Asymmetric mode (`github.com/1orgar/b53-go/b53a`):** stdlib `X25519` (`crypto/ecdh`) + `HKDF-SHA256` supporting both one-way sealed sessions (separate capsule, pure `float64` payloads) and pairwise key agreement.
 - **Pure Go standard library:** zero external dependencies, goroutine-safe `Cipher`, Go 1.22+.
 
 ## Installation
@@ -118,6 +119,58 @@ if err != nil {
 restoredMany, err := cipher.Deserialize(doubles)
 ```
 
+### Asymmetric Mode (`github.com/1orgar/b53-go/b53a`)
+
+Uses Go standard-library `crypto/ecdh` (`X25519`) + `HKDF-SHA256` without embedding key material inside the `float64` payloads:
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/1orgar/b53-go"
+	"github.com/1orgar/b53-go/b53a"
+)
+
+func main() {
+	bob, err := b53a.GenerateKeyPair()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 1. One-way sealed session: sender only needs bob.PublicKey;
+	//    capsule is stored/transmitted separately from the float64 payloads.
+	enc, capsule, err := b53a.SealSession(bob.PublicKey, b53a.WithContext("table:flags"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	d, err := enc.Encrypt([]bool{true, false, true, true}) // 1 exact float64 in [0.0, 1.0)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ds, err := enc.Serialize([]bool{true, false, true, false, true, false})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	dec, err := b53a.OpenSession(capsule, bob.PrivateKey, b53a.WithContext("table:flags"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(dec.DecryptString(d))
+	restored, _ := dec.Deserialize(ds)
+	fmt.Println(b53.FormatBits(restored))
+
+	// 2. Pairwise X25519 (no capsule needed when both parties hold keypairs)
+	alice, _ := b53a.GenerateKeyPair()
+	x, _ := b53a.Encrypt([]bool{true, false, true}, alice.PrivateKey, bob.PublicKey)
+	got, _ := b53a.Decrypt(x, bob.PrivateKey, alice.PublicKey)
+	fmt.Println(b53.FormatBits(got)) // 101
+}
+```
+
 ### Command-Line Interface
 
 ```bash
@@ -140,31 +193,33 @@ All commands accepting `--salt` also support `--salt-file path/to/salt`, the `B5
 
 ## How It Works
 
-An IEEE 754 `binary64` float on the uniform $2^{-53}$ grid represents $x = C \cdot 2^{-53}$ for $C \in \{0, 1, \dots, 2^{53} - 1\}$.
+An IEEE 754 `binary64` float on the uniform `2⁻⁵³` grid represents `x = C · 2⁻⁵³` for `C ∈ {0, 1, ..., 2⁵³ - 1}`.
 
-The entire 53-bit state space ($2^{53} = 9\,007\,199\,254\,740\,992$ states) is partitioned without gaps or overlaps across all 50 lengths $L \in [1, 50]$ so that:
+The entire 53-bit state space (`2⁵³ = 9,007,199,254,740,992` states) is partitioned without gaps or overlaps across all 50 lengths `L ∈ [1, 50]` so that:
 
-$$\sum_{L=1}^{50} M_L \cdot 2^L = 2^{53}$$
+<p align="center">
+  <code>&sum;<sub>L=1..50</sub> M<sub>L</sub> &middot; 2<sup>L</sup> = 2<sup>53</sup></code>
+</p>
 
-Space is allocated top-down from $L = 50$ to $L = 1$, reserving $\approx 25\%$ of the remaining budget at each step (at least $M_L \ge 3$ nonces even at $L = 50$):
+Space is allocated top-down from `L = 50` to `L = 1`, reserving ~25% of the remaining budget at each step (at least `M_L ≥ 3` nonces even at `L = 50`):
 
-| Length $L$ | Data combinations ($2^L$) | Nonces per array ($M_L$) | Segment size ($M_L \cdot 2^L$) |
+| Length `L` | Data combinations (`2^L`) | Nonces per array (`M_L`) | Segment size (`M_L · 2^L`) |
 |---:|---:|---:|---:|
-| 50 | $2^{50}$ | 3 | $3 \times 2^{50}$ |
-| 49 | $2^{49}$ | 3 | $3 \times 2^{49}$ |
-| 48 | $2^{48}$ | 3 | $3 \times 2^{48}$ |
-| 47 | $2^{47}$ | 5 | $5 \times 2^{47}$ |
-| 45 | $2^{45}$ | 13 | $13 \times 2^{45}$ |
-| 40 | $2^{40}$ | 100 | $100 \times 2^{40}$ |
-| 30 | $2^{30}$ | 5,811 | $5{,}811 \times 2^{30}$ |
-| 20 | $2^{20}$ | 335,103 | $335{,}103 \times 2^{20}$ |
-| 10 | $2^{10}$ | 19,323,738 | $\approx 1.98 \times 10^{10}$ |
-| 1 | $2^1$ | 2,971,477,630 | $\approx 5.94 \times 10^{9}$ |
+| 50 | `2^50` | 3 | `3 × 2^50` |
+| 49 | `2^49` | 3 | `3 × 2^49` |
+| 48 | `2^48` | 3 | `3 × 2^48` |
+| 47 | `2^47` | 5 | `5 × 2^47` |
+| 45 | `2^45` | 13 | `13 × 2^45` |
+| 40 | `2^40` | 100 | `100 × 2^40` |
+| 30 | `2^30` | 5,811 | `5,811 × 2^30` |
+| 20 | `2^20` | 335,103 | `335,103 × 2^20` |
+| 10 | `2^10` | 19,323,738 | `~1.98 × 10^10` |
+| 1 | `2^1` | 2,971,477,630 | `~5.94 × 10^9` |
 
-1. **Pack:** encode `bits` as $D \in [0, 2^L - 1]$, pick $r \in [0, M_L - 1]$ via `crypto/rand.Int`, and compute $P = \text{BASE}[L] + r \cdot 2^L + D$.
-2. **Permute:** apply an 8-round unbalanced Feistel network ($26 + 27$ bits) with `HMAC-SHA256` keyed by the normalized salt to obtain $C \in [0, 2^{53} - 1]$.
-3. **Float conversion:** return `math.Ldexp(float64(C), -53)` ($C \cdot 2^{-53}$).
-4. **Decrypt:** verify $x \in [0.0, 1.0)$ lies exactly on the $2^{-53}$ grid, invert the Feistel permutation to recover $P$, find the unique range $L$, discard $r$, and unpack the lower $L$ bits of $P - \text{BASE}[L]$.
+1. **Pack:** encode `bits` as `D ∈ [0, 2^L - 1]`, pick `r ∈ [0, M_L - 1]` via `crypto/rand.Int`, and compute `P = BASE[L] + r * 2^L + D`.
+2. **Permute:** apply an 8-round unbalanced Feistel network (`26 + 27` bits) with `HMAC-SHA256` keyed by the normalized salt to obtain `C ∈ [0, 2^53 - 1]`.
+3. **Float conversion:** return `math.Ldexp(float64(C), -53)` (`C · 2⁻⁵³`).
+4. **Decrypt:** verify `x ∈ [0.0, 1.0)` lies exactly on the `2⁻⁵³` grid, invert the Feistel permutation to recover `P`, find the unique range `L`, discard `r`, and unpack the lower `L` bits of `P - BASE[L]`.
 
 ## Precision & Chaining Requirements
 
@@ -173,9 +228,11 @@ Space is allocated top-down from $L = 50$ to $L = 1$, reserving $\approx 25\%$ o
 
 ## API Reference
 
-- `GenerateSalt(numBytes int) (string, error)` — generate a cryptographically random hex salt ($\ge 16$ bytes; `DefaultSaltBytes = 32`).
+### Core (`github.com/1orgar/b53-go`)
+
+- `GenerateSalt(numBytes int) (string, error)` — generate a cryptographically random hex salt (`>= 16` bytes; `DefaultSaltBytes = 32`).
 - `DeriveSalt[S Salt](password S, opts ...DeriveOption) (string, error)` — stretch a password/passphrase into a hex salt via pure-Go RFC 7914 `scrypt` (`WithContext`, `WithNumBytes`, `WithScryptParams`, `WithScryptMaxMem`).
-- `Encrypt[S Salt](bits []bool, salt S) (float64, error)` — encrypt $1..50$ booleans into a `float64` in $[0.0, 1.0)$.
+- `Encrypt[S Salt](bits []bool, salt S) (float64, error)` — encrypt `1..50` booleans into a `float64` in `[0.0, 1.0)`.
 - `Decrypt[S Salt](doubleVal float64, salt S) ([]bool, error)` — recover the exact boolean slice and length.
 - `Serialize[S Salt](bits []bool, salt S, opts ...SerializeOption) ([]float64, error)` — split an arbitrary-length boolean slice into `(len(bits) / minSize) + 1` chunks (or `0` when empty) of random lengths in `[1, minSize]` (first chunk strictly `< minSize`, default `minSize = 10` via `WithMinSize`) encrypted with chained per-chunk salts.
 - `Deserialize[S Salt](values []float64, salt S) ([]bool, error)` — verify and restore the full boolean slice from chained doubles.
@@ -183,6 +240,13 @@ Space is allocated top-down from $L = 50$ to $L = 1$, reserving $\approx 25\%$ o
 - `FormatBits(bits []bool) string` — format booleans as `"10110"`.
 - `NewCipher[S Salt](salt S) (*Cipher, error)` / `NewCipherFromPassword[S Salt](password S, opts ...DeriveOption) (*Cipher, error)` / `GenerateCipher(numBytes int) (*Cipher, string, error)` — reusable, goroutine-safe cipher with `.Encrypt()`, `.Decrypt()`, `.Serialize()`, `.Deserialize()`, `.EncryptString()`, `.DecryptString()`, `.KeyLen()`, and redacted `String()` / `GoString()`.
 - `NonceCount(length int) (uint64, error)`, `NonceCounts()`, `Bases()`, `Sizes()` — read-only access to the 53-bit partition tables.
+
+### Asymmetric (`github.com/1orgar/b53-go/b53a`)
+
+- `GenerateKeyPair() (KeyPair, error)` / `PublicKeyFromPrivate(privateKey)` — generate or derive 64-char hex X25519 keys (redacted `String()`/`GoString()`).
+- `SealSession(recipientPublicKey, opts...) (*b53.Cipher, string, error)` / `OpenSession(capsule, recipientPrivateKey, opts...) (*b53.Cipher, error)` — one-way ephemeral-static X25519 + HKDF-SHA256 session.
+- `EncryptSealed`, `DecryptSealed`, `SerializeSealed`, `DeserializeSealed` — single-shot sealed operations.
+- `DeriveSharedSalt`, `NewCipher`, `Encrypt`, `Decrypt`, `Serialize`, `Deserialize` — pairwise X25519 + HKDF-SHA256 operations (`WithContext`, `WithMinSize`).
 
 ## Development
 

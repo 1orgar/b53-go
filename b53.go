@@ -21,7 +21,7 @@ import (
 
 const (
 	// Version is the semantic version of the b53-go library and CLI.
-	Version = "0.1.0"
+	Version = "0.3.0"
 
 	// MantissaBits is the number of exact significand bits in [0.0, 1.0) on the 2^-53 grid.
 	MantissaBits = 53

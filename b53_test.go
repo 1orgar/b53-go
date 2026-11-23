@@ -584,8 +584,8 @@ func TestParseAndFormatBits(t *testing.T) {
 }
 
 func TestVersionConstant(t *testing.T) {
-	if Version != "0.1.0" {
-		t.Fatalf("Version = %q, want %q", Version, "0.1.0")
+	if Version != "0.3.0" {
+		t.Fatalf("Version = %q, want %q", Version, "0.3.0")
 	}
 }
 

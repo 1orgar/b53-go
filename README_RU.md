@@ -10,17 +10,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/1orgar/b53-go/actions/workflows/ci.yml/badge.svg)](https://github.com/1orgar/b53-go/actions/workflows/ci.yml)
 
-**`b53-go`** — Go-библиотека и CLI без внешних зависимостей для обратимого криптографического шифрования булевых срезов (`[]bool`) произвольной длины в стандартные 64-битные числа с плавающей точкой (`IEEE 754 binary64` / `float64`) на полуинтервале $[0.0, 1.0)$.
+**`b53-go`** — Go-библиотека и CLI без внешних зависимостей для обратимого криптографического шифрования булевых срезов (`[]bool`) произвольной длины в стандартные 64-битные числа с плавающей точкой (`IEEE 754 binary64` / `float64`) на полуинтервале `[0.0, 1.0)`.
 
-Библиотека полностью совместима по бинарному формату, цепочкам чанков и ключевой функции `scrypt` с Python-библиотекой [`b53`](https://github.com/1orgar/b53).
+Библиотека полностью совместима по бинарному формату, цепочкам чанков, `scrypt` и асимметричному обмену `X25519 + HKDF-SHA256` (`b53a`) с Python-библиотекой [`b53`](https://github.com/1orgar/b53).
 
 ## Ключевые свойства
 
-- **Скрытая размерность внутри числа:** для массивов длиной $L \in [1, 50]$ длина кодируется непосредственно в 53-битном пространстве мантиссы без передачи внешних метаданных.
+- **Скрытая размерность внутри числа:** для массивов длиной `L ∈ [1, 50]` длина кодируется непосредственно в 53-битном пространстве мантиссы без передачи внешних метаданных.
 - **Случайная компонента (Nonce) при каждой генерации:** повторное шифрование одного и того же массива с одной и той же солью даёт разные псевдослучайные `float64`.
-- **Биективная 53-битная перестановка:** 8-раундовая несбалансированная сеть Фейстеля ($26 + 27 = 53$ бита) с раундовой функцией на базе `HMAC-SHA256` и секретной соли.
+- **Биективная 53-битная перестановка:** 8-раундовая несбалансированная сеть Фейстеля (`26 + 27 = 53` бита) с раундовой функцией на базе `HMAC-SHA256` и секретной соли.
 - **Сериализация произвольной длины с цепочкой солей:** `Serialize` / `Deserialize` разбивают срез любой длины на `(len / minSize) + 1` случайных чанков и связывают их через цепочку `HMAC-SHA256` seed-ключей.
 - **Встроенный `scrypt` KDF (RFC 7914):** `DeriveSalt` и `NewCipherFromPassword` преобразуют пароль в 256-битную соль с поддержкой контекста.
+- **Асимметричный режим (`github.com/1orgar/b53-go/b53a`):** стандартный `crypto/ecdh` (`X25519`) + `HKDF-SHA256` для односторонних sealed-сессий (отдельная капсула, чистые `float64`) и парного обмена ключами.
 - **Только стандартная библиотека Go 1.22+:** ноль внешних зависимостей, потокобезопасный `Cipher`.
 
 ## Установка
@@ -118,6 +119,58 @@ if err != nil {
 restoredMany, err := cipher.Deserialize(doubles)
 ```
 
+### Асимметричный режим (`github.com/1orgar/b53-go/b53a`)
+
+Использует `crypto/ecdh` (`X25519`) + `HKDF-SHA256` без добавления эфемерных ключей внутрь выходного массива `float64`:
+
+```go
+package main
+
+import (
+	"fmt"
+	"log"
+
+	"github.com/1orgar/b53-go"
+	"github.com/1orgar/b53-go/b53a"
+)
+
+func main() {
+	bob, err := b53a.GenerateKeyPair()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 1. Односторонняя сессия: отправитель знает только bob.PublicKey,
+	//    капсула хранится/передаётся отдельно от выходных float64.
+	enc, capsule, err := b53a.SealSession(bob.PublicKey, b53a.WithContext("table:flags"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	d, err := enc.Encrypt([]bool{true, false, true, true}) // 1 точный float64 в [0.0, 1.0)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ds, err := enc.Serialize([]bool{true, false, true, false, true, false})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	dec, err := b53a.OpenSession(capsule, bob.PrivateKey, b53a.WithContext("table:flags"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(dec.DecryptString(d))
+	restored, _ := dec.Deserialize(ds)
+	fmt.Println(b53.FormatBits(restored))
+
+	// 2. Парный обмен X25519 (без капсулы, когда у обеих сторон есть пары ключей)
+	alice, _ := b53a.GenerateKeyPair()
+	x, _ := b53a.Encrypt([]bool{true, false, true}, alice.PrivateKey, bob.PublicKey)
+	got, _ := b53a.Decrypt(x, bob.PrivateKey, alice.PublicKey)
+	fmt.Println(b53.FormatBits(got)) // 101
+}
+```
+
 ### CLI
 
 ```bash
@@ -140,31 +193,55 @@ b53 deserialize "$CHUNKS" --salt "$SALT"
 
 ## Математическая модель
 
-Число на равномерной сетке $[0.0, 1.0)$ имеет вид $x = C \cdot 2^{-53}$, где $C \in \{0, 1, \dots, 2^{53} - 1\}$.
+Число на равномерной сетке `[0.0, 1.0)` имеет вид `x = C · 2⁻⁵³`, где `C ∈ {0, 1, ..., 2⁵³ - 1}`.
 
-Всё пространство из $2^{53} = 9\,007\,199\,254\,740\,992$ состояний без остатка разбивается на 50 непересекающихся сегментов для $L \in [1, 50]$:
+Всё пространство из `2⁵³ = 9 007 199 254 740 992` состояний без остатка разбивается на 50 непересекающихся сегментов для `L ∈ [1, 50]`:
 
-$$\sum_{L=1}^{50} M_L \cdot 2^L = 2^{53}$$
+<p align="center">
+  <code>&sum;<sub>L=1..50</sub> M<sub>L</sub> &middot; 2<sup>L</sup> = 2<sup>53</sup></code>
+</p>
 
-Бюджет распределяется адаптивно сверху вниз от $L = 50$ к $L = 1$ (около 25% остатка на шаг, не менее $M_L \ge 3$ вариантов на границе $L = 50$):
+Бюджет распределяется адаптивно сверху вниз от `L = 50` к `L = 1` (около 25% остатка на шаг, не менее `M_L ≥ 3` вариантов на границе `L = 50`):
 
-| Длина массива $L$ | Комбинаций ($2^L$) | Вариантов nonce ($M_L$) | Размер сегмента ($M_L \cdot 2^L$) |
+| Длина массива `L` | Комбинаций (`2^L`) | Вариантов nonce (`M_L`) | Размер сегмента (`M_L · 2^L`) |
 |---:|---:|---:|---:|
-| 50 | $2^{50}$ | 3 | $3 \times 2^{50}$ |
-| 49 | $2^{49}$ | 3 | $3 \times 2^{49}$ |
-| 48 | $2^{48}$ | 3 | $3 \times 2^{48}$ |
-| 47 | $2^{47}$ | 5 | $5 \times 2^{47}$ |
-| 45 | $2^{45}$ | 13 | $13 \times 2^{45}$ |
-| 40 | $2^{40}$ | 100 | $100 \times 2^{40}$ |
-| 30 | $2^{30}$ | 5 811 | $5\,811 \times 2^{30}$ |
-| 20 | $2^{20}$ | 335 103 | $335\,103 \times 2^{20}$ |
-| 10 | $2^{10}$ | 19 323 738 | $\approx 1{,}98 \times 10^{10}$ |
-| 1 | $2^1$ | 2 971 477 630 | $\approx 5{,}94 \times 10^9$ |
+| 50 | `2^50` | 3 | `3 × 2^50` |
+| 49 | `2^49` | 3 | `3 × 2^49` |
+| 48 | `2^48` | 3 | `3 × 2^48` |
+| 47 | `2^47` | 5 | `5 × 2^47` |
+| 45 | `2^45` | 13 | `13 × 2^45` |
+| 40 | `2^40` | 100 | `100 × 2^40` |
+| 30 | `2^30` | 5 811 | `5 811 × 2^30` |
+| 20 | `2^20` | 335 103 | `335 103 × 2^20` |
+| 10 | `2^10` | 19 323 738 | `~1.98 × 10^10` |
+| 1 | `2^1` | 2 971 477 630 | `~5.94 × 10^9` |
 
 ## Требования к хранению и передаче `float64`
 
 - При передаче через текст, CLI, CSV или JSON обязательно сохраняйте точность (`strconv.FormatFloat(x, 'g', -1, 64)` / стандартный `encoding/json`, в PostgreSQL — бинарный тип `DOUBLE PRECISION` / `FLOAT8`). Округление даже последнего разряда разрушает младшие биты шифротекста.
 - При использовании `Serialize` / `Deserialize` порядок и полный состав среза `[]float64` должны сохраняться целиком: начальный seed привязан к количеству чанков, а каждый последующий чанк шифруется модифицированной солью от предыдущего seed, индекса и размера предыдущего чанка — расшифровать отдельный `float64` по отдельности невозможно.
+
+## Справочник API
+
+### Базовый пакет (`github.com/1orgar/b53-go`)
+
+- `GenerateSalt(numBytes int) (string, error)` — генерация криптостойкой hex-соли (`>= 16` байт; `DefaultSaltBytes = 32`).
+- `DeriveSalt[S Salt](password S, opts ...DeriveOption) (string, error)` — растяжение пароля в hex-соль через встроенный RFC 7914 `scrypt` (`WithContext`, `WithNumBytes`, `WithScryptParams`, `WithScryptMaxMem`).
+- `Encrypt[S Salt](bits []bool, salt S) (float64, error)` — шифрование `1..50` булевых значений в `float64` на `[0.0, 1.0)`.
+- `Decrypt[S Salt](doubleVal float64, salt S) ([]bool, error)` — восстановление исходного `[]bool` и его длины.
+- `Serialize[S Salt](bits []bool, salt S, opts ...SerializeOption) ([]float64, error)` — разбиение среза произвольной длины на `(len(bits) / minSize) + 1` чанков случайной длины из `[1, minSize]` (`len(chunk[0]) < minSize`, по умолчанию `minSize = 10` через `WithMinSize`) с цепочечной модификацией соли.
+- `Deserialize[S Salt](values []float64, salt S) ([]bool, error)` — восстановление полного среза `[]bool` из цепочки `float64`.
+- `ParseBits(raw string) ([]bool, error)` — разбор `"10110"` или `"true,false,1,0"`.
+- `FormatBits(bits []bool) string` — форматирование в битовую строку `"10110"`.
+- `NewCipher[S Salt](salt S) (*Cipher, error)` / `NewCipherFromPassword[S Salt](password S, opts ...DeriveOption) (*Cipher, error)` / `GenerateCipher(numBytes int) (*Cipher, string, error)` — потокобезопасный шифр с методами `.Encrypt()`, `.Decrypt()`, `.Serialize()`, `.Deserialize()`, `.EncryptString()`, `.DecryptString()`, `.KeyLen()` и маскирующими `String()` / `GoString()`.
+- `NonceCount(length int) (uint64, error)`, `NonceCounts()`, `Bases()`, `Sizes()` — доступ только для чтения к таблицам разбиения.
+
+### Асимметричный пакет (`github.com/1orgar/b53-go/b53a`)
+
+- `GenerateKeyPair() (KeyPair, error)` / `PublicKeyFromPrivate(privateKey)` — генерация и выведение 64-символьных hex-ключей X25519 (с редактированием приватного ключа в `String()`/`GoString()`).
+- `SealSession(recipientPublicKey, opts...) (*b53.Cipher, string, error)` / `OpenSession(capsule, recipientPrivateKey, opts...) (*b53.Cipher, error)` — односторонняя эфемерная X25519 + HKDF-SHA256 сессия.
+- `EncryptSealed`, `DecryptSealed`, `SerializeSealed`, `DeserializeSealed` — одноразовые sealed-операции.
+- `DeriveSharedSalt`, `NewCipher`, `Encrypt`, `Decrypt`, `Serialize`, `Deserialize` — парные операции X25519 + HKDF-SHA256 (`WithContext`, `WithMinSize`).
 
 ## Разработка и тесты
 
