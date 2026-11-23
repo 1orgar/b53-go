@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200" role="img" aria-label="b53-go logo">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B132B"/>
+      <stop offset="55%" stop-color="#111C3A"/>
+      <stop offset="100%" stop-color="#162447"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="100%" stop-color="#00ADD8"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="100%" stop-color="#F59E0B"/>
+    </linearGradient>
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ADD8" stop-opacity="0.7"/>
+      <stop offset="50%" stop-color="#38BDF8" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0.6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer card suitable for both light & dark GitHub themes -->
+  <rect x="4" y="4" width="632" height="192" rx="28" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="2.5"/>
+
+  <!-- Subtle background binary lattice on right edge -->
+  <g opacity="0.12" fill="#38BDF8">
+    <rect x="488" y="26" width="11" height="11" rx="3"/>
+    <rect x="506" y="26" width="11" height="11" rx="3" opacity="0.4"/>
+    <rect x="524" y="26" width="11" height="11" rx="3"/>
+    <rect x="542" y="26" width="11" height="11" rx="3"/>
+    <rect x="560" y="26" width="11" height="11" rx="3" opacity="0.4"/>
+    <rect x="578" y="26" width="11" height="11" rx="3"/>
+    <rect x="506" y="44" width="11" height="11" rx="3"/>
+    <rect x="524" y="44" width="11" height="11" rx="3" opacity="0.4"/>
+    <rect x="542" y="44" width="11" height="11" rx="3"/>
+    <rect x="560" y="44" width="11" height="11" rx="3"/>
+    <rect x="578" y="44" width="11" height="11" rx="3" opacity="0.4"/>
+    <rect x="524" y="62" width="11" height="11" rx="3"/>
+    <rect x="560" y="62" width="11" height="11" rx="3" opacity="0.4"/>
+    <rect x="578" y="62" width="11" height="11" rx="3"/>
+  </g>
+
+  <!-- Hexagonal Cryptographic Shield Emblem -->
+  <g transform="translate(36, 25)">
+    <polygon points="74,4 136,40 136,110 74,146 12,110 12,40"
+             fill="#081024" stroke="url(#cyanGrad)" stroke-width="3.5" stroke-linejoin="round"/>
+    <polygon points="74,14 126,44 126,106 74,136 22,106 22,44"
+             fill="none" stroke="#38BDF8" stroke-opacity="0.2" stroke-width="1.5" stroke-linejoin="round"/>
+
+    <!-- Padlock shackle -->
+    <path d="M 54 66 V 51 A 20 20 0 0 1 94 51 V 66"
+          fill="none" stroke="url(#cyanGrad)" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- Lock body representing IEEE 754 53-bit block -->
+    <rect x="42" y="64" width="64" height="48" rx="10" fill="#132347" stroke="url(#goldGrad)" stroke-width="2.5"/>
+
+    <!-- 53-bit Feistel split motif inside lock -->
+    <g transform="translate(52, 74)">
+      <!-- Left branch (26 bits) -->
+      <rect x="0" y="0" width="8" height="8" rx="2" fill="#22D3EE"/>
+      <rect x="10.5" y="0" width="8" height="8" rx="2" fill="#22D3EE" opacity="0.35"/>
+      <rect x="0" y="10.5" width="8" height="8" rx="2" fill="#22D3EE" opacity="0.35"/>
+      <rect x="10.5" y="10.5" width="8" height="8" rx="2" fill="#22D3EE"/>
+
+      <!-- Divider -->
+      <line x1="22" y1="0" x2="22" y2="18.5" stroke="#F59E0B" stroke-width="2" stroke-linecap="round"/>
+
+      <!-- Right branch (27 bits) -->
+      <rect x="25.5" y="0" width="8" height="8" rx="2" fill="#FBBF24"/>
+      <rect x="36" y="0" width="8" height="8" rx="2" fill="#FBBF24" opacity="0.35"/>
+      <rect x="25.5" y="10.5" width="8" height="8" rx="2" fill="#FBBF24"/>
+      <rect x="36" y="10.5" width="8" height="8" rx="2" fill="#FBBF24"/>
+
+      <!-- Interval [0.0, 1.0) mantissa rail -->
+      <rect x="0" y="23" width="44" height="4" rx="2" fill="#38BDF8" opacity="0.85"/>
+    </g>
+  </g>
+
+  <!-- Brand Wordmark -->
+  <text x="202" y="104"
+        font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="64" font-weight="800" letter-spacing="-1.5" fill="#F8FAFC">b53</text>
+
+  <!-- Go pill badge -->
+  <rect x="326" y="57" width="86" height="47" rx="14" fill="url(#cyanGrad)"/>
+  <text x="369" y="92" text-anchor="middle"
+        font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif"
+        font-size="34" font-weight="800" letter-spacing="-0.5" fill="#081024">go</text>
+
+  <!-- Subtitle & Technical Tagline -->
+  <text x="204" y="135"
+        font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+        font-size="12.5" font-weight="600" letter-spacing="0.6" fill="#94A3B8">53-BIT FEISTEL BIT PACKING IN IEEE 754 FLOAT64</text>
+
+  <!-- Bottom feature chips -->
+  <g transform="translate(204, 150)">
+    <rect x="0" y="0" width="80" height="22" rx="6" fill="#0F1D3D" stroke="#00ADD8" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="40" y="15" text-anchor="middle" font-family="ui-monospace, monospace" font-size="11" font-weight="600" fill="#38BDF8">[0.0, 1.0)</text>
+
+    <rect x="90" y="0" width="98" height="22" rx="6" fill="#0F1D3D" stroke="#F59E0B" stroke-opacity="0.45" stroke-width="1"/>
+    <text x="139" y="15" text-anchor="middle" font-family="ui-monospace, monospace" font-size="11" font-weight="600" fill="#FBBF24">HMAC-SHA256</text>
+
+    <rect x="198" y="0" width="112" height="22" rx="6" fill="#0F1D3D" stroke="#38BDF8" stroke-opacity="0.35" stroke-width="1"/>
+    <text x="254" y="15" text-anchor="middle" font-family="ui-monospace, monospace" font-size="11" font-weight="600" fill="#CBD5E1">SCRYPT + CHAIN</text>
+  </g>
+</svg>
